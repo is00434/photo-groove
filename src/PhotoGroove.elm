@@ -10,6 +10,7 @@ import Http
 import Json.Decode exposing (Decoder, int, list, string, succeed, at)
 import Json.Decode.Pipeline exposing (optional, required)
 import Json.Encode
+import Html.Events exposing (onDoubleClick)
 
 type alias Model =
     { status : Status
@@ -17,6 +18,7 @@ type alias Model =
     , hue : Int
     , ripple : Int
     , noise : Int
+    , activity : String
     }
 
 type alias Photo = 
@@ -34,6 +36,7 @@ type ThumbnailSize
     = Small
     | Medium
     | Large
+
 type Msg 
     = ClickedPhoto Photo
     | ClickedSize ThumbnailSize
@@ -44,13 +47,22 @@ type Msg
     | SlidHue Int
     | SlidRipple Int
     | SlidNoise Int
+    | GotActivity String
+    | ClickedResetFilters
 
 type Status
     = Loading
     | Loaded (List Photo) Photo
     | Errored String
 
+                
+urlPrefix : String
+urlPrefix =
+    "http://elm-in-action.com/"
+
 port setFilters : FilterOptions -> Cmd msg
+
+port activityChanges : (String -> msg) -> Sub msg
 
 view : Model -> Html Msg
 view model =
@@ -79,6 +91,9 @@ viewLoaded photos photo chosenSize model =
             [ onClick ClickedSurpriseMe ]
             [ text "Surprise Me!" ]
         , div 
+            [ class "activity" ]
+            [ text model.activity ]
+        , div 
             [ class "filters" ]
             [ viewFilter SlidHue "Hue" model.hue
             , viewFilter SlidRipple "Ripple" model.ripple
@@ -88,7 +103,10 @@ viewLoaded photos photo chosenSize model =
             [ id "thumbnails", class (sizeToClass chosenSize)] 
             (List.map (viewThumbnail photo) photos)
         , canvas 
-            [ id "main-canvas", class "large" ]
+            [ id "main-canvas"
+            , class "large" 
+            , onDoubleClick ClickedResetFilters
+            ]
             []
         ]
 
@@ -130,10 +148,10 @@ update msg model =
             applyFilters { model | ripple = ripple }
         SlidNoise noise ->
             applyFilters { model | noise = noise }
-                
-urlPrefix : String
-urlPrefix =
-    "http://elm-in-action.com/"
+        GotActivity activity ->
+            ({ model | activity = activity }, Cmd.none)
+        ClickedResetFilters -> 
+            applyFilters { model | hue = 0, ripple = 0, noise = 0 }
 
 selectedPhoto : Photo -> Status -> Status
 selectedPhoto photo status =
@@ -207,7 +225,9 @@ viewFilter toMsg name magnitude =
             , onSlide toMsg
             ]
             []
-        , label [] [ text (String.fromInt magnitude) ]
+        , label 
+            [] 
+            [ text (String.fromInt magnitude) ]
         ]
 
 sizeToString : ThumbnailSize -> String
@@ -248,6 +268,7 @@ initialModel =
     , hue = 5
     , ripple = 5
     , noise = 5
+    , activity = ""
     }
 
 initialCmd : Cmd Msg
@@ -257,11 +278,18 @@ initialCmd =
         , expect = Http.expectJson GotPhotos (list photoDecoder)
         }
 
-main : Program () Model Msg
+init : Float -> (Model, Cmd Msg)
+init flags = 
+    let
+        activity = "Initializing Pasta v" ++ String.fromFloat flags
+    in
+    ({ initialModel | activity = activity }, initialCmd)
+    
+main : Program Float Model Msg
 main =
     Browser.element
-        { init = \_ -> (initialModel, initialCmd)
+        { init = init
         , view = view
         , update = update
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = \_ -> activityChanges GotActivity
         }
